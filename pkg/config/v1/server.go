@@ -209,6 +209,15 @@ type SSHTunnelGateway struct {
 	AutoGenPrivateKeyPath string                  `json:"autoGenPrivateKeyPath,omitempty"`
 	AuthorizedKeysFile    string                  `json:"authorizedKeysFile,omitempty"`
 	AuthorizedKeysDB      *AuthorizedKeysDBConfig `json:"authorizedKeysDB,omitempty"`
+	// HeartbeatInterval specifies the interval in seconds at which the server
+	// checks that a tunnel client is still there, like sshd's
+	// ClientAliveInterval. By default, this value is 30.
+	HeartbeatInterval int64 `json:"heartbeatInterval,omitempty"`
+	// HeartbeatCountMax specifies how many checks may go unanswered before the
+	// connection is closed, like sshd's ClientAliveCountMax. Set zero or a
+	// negative value to send checks without asking for an answer. By default,
+	// this value is 3.
+	HeartbeatCountMax int64 `json:"heartbeatCountMax,omitempty"`
 }
 
 // AuthorizedKeysDBConfig configures a Postgres-backed lookup for SSH
@@ -232,4 +241,6 @@ type AuthorizedKeysDBConfig struct {
 
 func (c *SSHTunnelGateway) Complete() {
 	c.AutoGenPrivateKeyPath = util.EmptyOr(c.AutoGenPrivateKeyPath, "./.autogen_ssh_key")
+	c.HeartbeatInterval = util.EmptyOr(c.HeartbeatInterval, 30)
+	c.HeartbeatCountMax = util.EmptyOr(c.HeartbeatCountMax, 3)
 }

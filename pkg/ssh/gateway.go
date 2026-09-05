@@ -21,6 +21,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"golang.org/x/crypto/ssh"
 
@@ -38,6 +39,9 @@ type Gateway struct {
 
 	sshConfig *ssh.ServerConfig
 	authDB    *AuthorizedKeysDB
+
+	heartbeatInterval time.Duration
+	heartbeatCountMax int64
 }
 
 func NewGateway(
@@ -133,6 +137,8 @@ func NewGateway(
 		peerServerListener: peerServerListener,
 		sshConfig:          sshConfig,
 		authDB:             authDB,
+		heartbeatInterval:  time.Duration(cfg.HeartbeatInterval) * time.Second,
+		heartbeatCountMax:  cfg.HeartbeatCountMax,
 	}, nil
 }
 
@@ -157,7 +163,7 @@ func (g *Gateway) Close() error {
 func (g *Gateway) handleConn(conn net.Conn) {
 	defer conn.Close()
 
-	ts, err := NewTunnelServer(conn, g.sshConfig, g.peerServerListener)
+	ts, err := NewTunnelServer(conn, g.sshConfig, g.peerServerListener, g.heartbeatInterval, g.heartbeatCountMax)
 	if err != nil {
 		return
 	}

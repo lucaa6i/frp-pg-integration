@@ -23,6 +23,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	libio "github.com/fatedier/golib/io"
@@ -67,17 +68,25 @@ type TunnelServer struct {
 	sc             *ssh.ServerConfig
 	firstChannel   ssh.Channel
 
+	heartbeatInterval time.Duration
+	heartbeatCountMax int64
+
 	vc                 *virtual.Client
 	peerServerListener *netpkg.InternalListener
 	doneCh             chan struct{}
 	closeDoneChOnce    sync.Once
 }
 
-func NewTunnelServer(conn net.Conn, sc *ssh.ServerConfig, peerServerListener *netpkg.InternalListener) (*TunnelServer, error) {
+func NewTunnelServer(
+	conn net.Conn, sc *ssh.ServerConfig, peerServerListener *netpkg.InternalListener,
+	heartbeatInterval time.Duration, heartbeatCountMax int64,
+) (*TunnelServer, error) {
 	s := &TunnelServer{
 		underlyingConn:     conn,
 		sc:                 sc,
 		peerServerListener: peerServerListener,
+		heartbeatInterval:  heartbeatInterval,
+		heartbeatCountMax:  heartbeatCountMax,
 		doneCh:             make(chan struct{}),
 	}
 	return s, nil
@@ -324,17 +333,42 @@ func (s *TunnelServer) handleNewChannel(channel ssh.NewChannel, extraPayloadCh c
 	}
 }
 
+// keepAlive closes the connection after heartbeatCountMax unanswered checks,
+// like sshd's ClientAliveCountMax. RFC 4254 requires an answer whenever
+// want_reply is set, so even a failure proves the client is alive.
 func (s *TunnelServer) keepAlive(ch ssh.Channel) {
-	tk := time.NewTicker(time.Second * 30)
+	tk := time.NewTicker(s.heartbeatInterval)
 	defer tk.Stop()
+
+	var unanswered atomic.Int64
 
 	for {
 		select {
 		case <-tk.C:
-			_, err := ch.SendRequest("heartbeat", false, nil)
-			if err != nil {
+			if s.heartbeatCountMax <= 0 {
+				if _, err := ch.SendRequest("heartbeat", false, nil); err != nil {
+					return
+				}
+				continue
+			}
+
+			if unanswered.Load() >= s.heartbeatCountMax {
+				// The proxies keep their names until the connection goes.
+				log.Warnf("ssh tunnel client left %d checks unanswered, closing the connection", s.heartbeatCountMax)
+				s.closeDoneChOnce.Do(func() {
+					_ = s.sshConn.Close()
+					close(s.doneCh)
+				})
 				return
 			}
+
+			unanswered.Add(1)
+			go func() {
+				// Blocks until the client answers or the channel breaks.
+				if _, err := ch.SendRequest("heartbeat", true, nil); err == nil {
+					unanswered.Add(-1)
+				}
+			}()
 		case <-s.doneCh:
 			return
 		}

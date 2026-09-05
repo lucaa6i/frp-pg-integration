@@ -155,6 +155,9 @@ natholeAnalysisDataReserveHours = 168
 # sshTunnelGateway.privateKeyFile = "/home/frp-user/.ssh/id_rsa"
 # sshTunnelGateway.autoGenPrivateKeyPath = ""
 # sshTunnelGateway.authorizedKeysFile = "/home/frp-user/.ssh/authorized_keys"
+# Like sshd's ClientAliveInterval and ClientAliveCountMax.
+# sshTunnelGateway.heartbeatInterval = 30
+# sshTunnelGateway.heartbeatCountMax = 3
 
 [[httpPlugins]]
 name = "user-manager"
